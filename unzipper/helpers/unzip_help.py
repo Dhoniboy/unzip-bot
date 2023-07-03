@@ -1,21 +1,29 @@
 # Copyright (c) 2023 EDM115
 import math
 import time
-from typing import List, Union
 from unzipper.helpers.database import del_cancel_task, get_cancel_task
 
 from unzipper.modules.bot_data import Buttons, Messages
 
 # Credits: SpEcHiDe's AnyDL-Bot for Progress bar + Time formatter
 async def progress_for_pyrogram(current, total, ud_type, message, start, unzip_bot):
-    if (await get_cancel_task(message.from_user.id)):
+    if message.from_user is not None and await get_cancel_task(message.from_user.id):
         unzip_bot.stop_transmission()
         await message.edit(text=Messages.DL_STOPPED)
         await del_cancel_task(message.from_user.id)
     else:
         now = time.time()
         diff = now - start
-        if round(diff % 10.00) == 0 or current == total:
+        if total == 0:
+            try:
+                tmp = "**Size : Unknown** \n\nThis may take a while, go grab a coffee ☕️"
+                await message.edit(
+                    text=f"{ud_type}\n {tmp} \n\n**Powered by @EDM115bots**",
+                    reply_markup=Buttons.I_PREFER_STOP,
+                )
+            except:
+                pass
+        elif round(diff % 10.00) == 0 or current == total:
             percentage = current * 100 / total
             speed = current / diff
             elapsed_time = round(diff) * 1000
@@ -23,23 +31,11 @@ async def progress_for_pyrogram(current, total, ud_type, message, start, unzip_b
             estimated_total_time = time_to_completion
             elapsed_time = TimeFormatter(milliseconds=elapsed_time)
             estimated_total_time = TimeFormatter(milliseconds=estimated_total_time)
-            progress = "[{0}{1}] \n**Processing…** : `{2}%`\n".format(
-                "".join(["⬢" for i in range(math.floor(percentage / 5))]),
-                "".join(["⬡" for i in range(20 - math.floor(percentage / 5))]),
-                round(percentage, 2),
-            )
-
-            tmp = progress + "`{0} of {1}`\n**Speed :** `{2}/s`\n**ETA :** `{3}`\n".format(
-                humanbytes(current),
-                humanbytes(total),
-                humanbytes(speed),
-                estimated_total_time
-                if estimated_total_time != "" or percentage != "100"
-                else "0 s",
-            )
+            progress = f'[{"".join(["⬢" for i in range(math.floor(percentage / 5))])}{"".join(["⬡" for i in range(20 - math.floor(percentage / 5))])}] \n**Processing…** : `{round(percentage, 2)}%`\n'
+            tmp = progress + f'`{humanbytes(current)} of {humanbytes(total)}`\n**Speed :** `{humanbytes(speed)}/s`\n**ETA :** `{estimated_total_time if estimated_total_time != "" or percentage != "100" else "0 s"}`\n'
             try:
                 await message.edit(
-                    text="{}\n {} \n\n**Powered by @EDM115bots**".format(ud_type, tmp),
+                    text=f"{ud_type}\n {tmp} \n\n**Powered by @EDM115bots**",
                     reply_markup=Buttons.I_PREFER_STOP,
                 )
             except:
@@ -124,6 +120,6 @@ extentions_list = {
     ],
     "audio": ["aif", "aiff", "aac", "flac", "mp3", "ogg", "wav", "wma"],
     "photo": ["gif", "ico", "jpg", "jpeg", "png", "tiff", "webp"],
-    "split": ["0*", "001", "002", "003", "004", "005"],
+    "split": ["0*", "001", "002", "003", "004", "005", "006", "007", "008", "009"],
     "video": ["3gp", "avi", "flv", "mp4", "mkv", "mov", "mpeg", "mpg", "webm"],
 }

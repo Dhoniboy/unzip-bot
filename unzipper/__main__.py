@@ -13,7 +13,6 @@ from .helpers.start import check_logs, dl_thumbs, set_boot_time
 from .modules.bot_data import Messages
 
 running = True
-# https://stackoverflow.com/questions/18499497/how-to-process-sigterm-signal-gracefully
 
 
 def handler_stop_signals(signum, frame):
@@ -39,6 +38,7 @@ while running:
             os.makedirs(Config.DOWNLOAD_LOCATION)
         if not os.path.isdir(Config.THUMB_LOCATION):
             os.makedirs(Config.THUMB_LOCATION)
+        LOGGER.info("Starting bot…")
         unzipperbot.start()
         starttime = time.strftime("%Y/%m/%d - %H:%M:%S")
         unzipperbot.send_message(
@@ -49,7 +49,6 @@ while running:
         LOGGER.info("Checking Log channel…")
         if check_logs():
             LOGGER.info("Log channel alright")
-            LOGGER.info("Starting bot…")
             LOGGER.info("Bot is running now ! Join @EDM115bots")
             idle()
         else:
@@ -67,4 +66,5 @@ stoptime = time.strftime("%Y/%m/%d - %H:%M:%S")
 unzipperbot.send_message(
     chat_id=Config.LOGS_CHANNEL, text=Messages.STOP_TXT.format(stoptime)
 )
+unzipperbot.stop()
 LOGGER.info("Bot stopped 😪")

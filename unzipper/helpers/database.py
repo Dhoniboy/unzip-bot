@@ -1,7 +1,7 @@
 # Copyright (c) 2023 EDM115
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from requests import post
+import requests
 
 from config import Config
 from unzipper import LOGGER, unzipperbot as Client
@@ -198,11 +198,17 @@ async def update_thumb(user_id, thumb_url, force):
         await thumb_db.insert_one({"_id": user_id, "url": thumb_url})
 
 async def upload_thumb(image):
-    with open(image, "rb") as file:
-        request = post(
-            "https://telegra.ph/upload", files={"file": ("file", file, "image/jpeg")}
-        ).json()[0]
-        return f"https://telegra.ph{request['src']}"
+    try:
+        with open(image, "rb") as file:
+            response = requests.post(
+                "https://telegra.ph/upload", files={"file": ("file", file, "image/jpeg")}
+            )
+            response.raise_for_status()  # Raise an exception if the request was not successful
+            request = response.json()[0]
+            return f"https://telegra.ph{request['src']}"
+    except requests.exceptions.RequestException as err:
+        LOGGER.warning(err)
+        return f"Error occurred during upload: {err}"
 
 async def get_thumb_users():
     return [thumb_list async for thumb_list in thumb_db.find({})]
@@ -293,7 +299,8 @@ async def count_cancel_tasks():
     return tasks
 
 async def add_cancel_task(user_id):
-    await cancel_tasks.insert_one({"user_id": user_id})
+    if not await get_cancel_task(user_id):
+        await cancel_tasks.insert_one({"user_id": user_id})
 
 async def del_cancel_task(user_id):
     is_exist = await cancel_tasks.find_one({"user_id": user_id})
@@ -311,3 +318,50 @@ async def get_cancel_task(user_id):
     
 async def clear_cancel_tasks():
     await cancel_tasks.delete_many({})
+
+
+# DB for merge tasks
+
+merge_tasks = unzipper_db["merge_tasks"]
+
+async def get_merge_tasks():
+    return [merge_list async for merge_list in merge_tasks.find({})]
+
+async def count_merge_tasks():
+    tasks = await merge_tasks.count_documents({})
+    return tasks
+
+async def add_merge_task(user_id, message_id):
+    if not await get_merge_task(user_id):
+        await merge_tasks.insert_one({"user_id": user_id, "message_id": message_id})
+    else:
+        await merge_tasks.update_one({"user_id": user_id}, {"$set": {"message_id": message_id}})
+
+async def del_merge_task(user_id):
+    is_exist = await merge_tasks.find_one({"user_id": user_id})
+    if is_exist is not None and is_exist:
+        await merge_tasks.delete_one({"user_id": user_id})
+    else:
+        return
+
+async def get_merge_task(user_id):
+    is_exist = await merge_tasks.find_one({"user_id": user_id})
+    if is_exist is not None and is_exist:
+        return True
+    else:
+        return False
+
+async def get_merge_task_message_id(user_id):
+    is_exist = await merge_tasks.find_one({"user_id": user_id})
+    if is_exist is not None and is_exist:
+        return is_exist["message_id"]
+    else:
+        return False
+    
+async def clear_merge_tasks():
+    await merge_tasks.delete_many({})
+
+
+# DB for maintenance mode
+
+maintenance_mode = unzipper_db["maintenance_mode"]

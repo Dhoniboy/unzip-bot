@@ -29,14 +29,15 @@ async def _extract_with_7z_helper(path, archive_path, password=None):
     if password:
         command = f'7z x -o{path} -p"{password}" {archive_path} -y'
     else:
-        testcommand = f'7z t {archive_path} -p"IAmVeryProbablySureThatThisPasswordWillNeverBeUsedElseItsVeryStrangeAAAAAAAAAAAAAAAAAAA" -y' # skipcq: FLK-E501
-        testoutput = await run_cmds_on_cr(__run_cmds_unzipper, cmd=testcommand)
-        if "Everything is Ok" in testoutput:
-            command = f"7z x -o{path} {archive_path} -y"
-        else:
-            command = "echo 'This archive is password protected'"
+        command = f"7z x -o{path} {archive_path} -y"
     return await run_cmds_on_cr(__run_cmds_unzipper, cmd=command)
 
+async def _test_with_7z_helper(archive_path):
+    command = f'7z t {archive_path} -p"IAmVeryProbablySureThatThisPasswordWillNeverBeUsedElseItsVeryStrangeAAAAAAAAAAAAAAAAAAA" -y' # skipcq: FLK-E501
+    testoutput = await run_cmds_on_cr(__run_cmds_unzipper, cmd=command)
+    if "Everything is Ok" in testoutput:
+        return True
+    return False
 
 # Extract with zstd (for .zst files)
 async def _extract_with_zstd(path, archive_path):
@@ -57,15 +58,19 @@ async def extr_files(path, archive_path, password=None):
 
 # Split files
 async def split_files(iinput, ooutput):
-    command = f"split -a 3 --numeric-suffixes=001 -b 1GB {iinput} {ooutput}"
-    logs = await run_cmds_on_cr(__run_cmds_unzipper, cmd=command)
-    LOGGER.info("logs: " + logs)
-    spdir = ooutput.replace("/" + ooutput.split("/")[-1], "/")
-    LOGGER.info("spdir: " + spdir)
+    command = f'7z a -tzip -mx=0 "{ooutput}" "{iinput}" -v2097152000b'
+    await run_cmds_on_cr(__run_cmds_unzipper, cmd=command)
+    spdir = ooutput.replace("/" + ooutput.split("/")[-1], "")
     splittedfiles = await get_files(spdir)
-    LOGGER.info("splittedfiles: " + str(splittedfiles))
     return splittedfiles
 
+# Merge files
+async def merge_files(iinput, ooutput, password=None):
+    if password:
+        command = f'7z x -o"{ooutput}" -p"{password}" "{iinput}" -y'
+    else:
+        command = f'7z x -o"{ooutput}" "{iinput}" -y'
+    return await run_cmds_on_cr(__run_cmds_unzipper, cmd=command)
 
 # Get files in directory as a list
 async def get_files(path):
@@ -74,33 +79,50 @@ async def get_files(path):
 
 
 # Make keyboard
-async def make_keyboard(paths, user_id, chat_id):
+async def make_keyboard(paths, user_id, chat_id, unziphttp, rzfile=None):
     num = 0
     i_kbd = InlineKeyboard(row_width=1)
     data = []
-    data.append(InlineKeyboardButton(
-        "Upload all 📤", f"ext_a|{user_id}|{chat_id}"))
+    if unziphttp:
+        data.append(InlineKeyboardButton(
+        "Upload all 📤", f"ext_a|{user_id}|{chat_id}|{unziphttp}|{rzfile}"))
+    else:
+        data.append(InlineKeyboardButton(
+        "Upload all 📤", f"ext_a|{user_id}|{chat_id}|{unziphttp}"))
     data.append(InlineKeyboardButton("❌ Cancel", "cancel_dis"))
     for file in paths:
         if num > 96:
             break
-        data.append(
-            InlineKeyboardButton(
-                f"{num} - {os.path.basename(file)}".encode(
-                    "utf-8").decode("utf-8"),
-                f"ext_f|{user_id}|{chat_id}|{num}",
+        if unziphttp:
+            data.append(
+                InlineKeyboardButton(
+                    f"{num} - {os.path.basename(file)}".encode(
+                        "utf-8").decode("utf-8"),
+                    f"ext_f|{user_id}|{chat_id}|{num}|{unziphttp}|{rzfile}",
+                )
             )
-        )
+        else:
+            data.append(
+                InlineKeyboardButton(
+                    f"{num} - {os.path.basename(file)}".encode(
+                        "utf-8").decode("utf-8"),
+                    f"ext_f|{user_id}|{chat_id}|{num}|{unziphttp}",
+                )
+            )
         num += 1
     i_kbd.add(*data)
     return i_kbd
 
 
-async def make_keyboard_empty(user_id, chat_id):
+async def make_keyboard_empty(user_id, chat_id, unziphttp, rzfile=None):
     i_kbd = InlineKeyboard(row_width=2)
     data = []
-    data.append(InlineKeyboardButton(
-        "Upload all 📤", f"ext_a|{user_id}|{chat_id}"))
+    if unziphttp:
+        data.append(InlineKeyboardButton(
+            "Upload all 📤", f"ext_a|{user_id}|{chat_id}|{unziphttp}|{rzfile}"))
+    else:
+        data.append(InlineKeyboardButton(
+            "Upload all 📤", f"ext_a|{user_id}|{chat_id}|{unziphttp}"))
     data.append(InlineKeyboardButton("❌ Cancel", "cancel_dis"))
     i_kbd.add(*data)
     return i_kbd

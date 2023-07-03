@@ -15,17 +15,20 @@ from pyrogram.types import Message
 from config import Config
 from unzipper import LOGGER, boottime, unzipperbot
 from unzipper.helpers.database import (
+    add_merge_task,
     add_user,
     add_banned_user,
     check_user,
     count_banned_users,
     count_users,
     del_banned_user,
+    del_merge_task,
+    del_ongoing_task,
     del_user,
+    get_merge_task,
     get_upload_mode,
     get_uploaded,
     get_users_list,
-    get_boot,
     count_ongoing_tasks,
 )
 from unzipper.helpers.unzip_help import humanbytes, timeformat_sec
@@ -79,16 +82,25 @@ async def extract_archive(_, message: Message):
         return await unzip_msg.edit(
             "Already one process is running, don't spam 😐\n\nWanna clear your files from my server ? Then just send **/clean** command"
         )
+    if await get_merge_task(user_id):
+        if message.document and re.search(r"\.(?:part\d+\.rar|z\d+|r\d{2})$", message.document.file_name):
+            await del_merge_task(user_id)
+            await del_ongoing_task(user_id)
+            return await unzip_msg.edit("Those type of splitted files can't be processed yet")
+        return await unzip_msg.delete()
     if message.text and (re.match(https_url_regex, message.text)):
         await unzip_msg.edit(
             text=Messages.CHOOSE_EXT_MODE.format("URL", "🔗"),
             reply_markup=Buttons.CHOOSE_E_U__BTNS,
         )
     elif message.document:
-        await unzip_msg.edit(
-            text=Messages.CHOOSE_EXT_MODE.format("file", "🗂️"),
-            reply_markup=Buttons.CHOOSE_E_F__BTNS,
-        )
+        if re.search(r"\.\d{3}$", message.document.file_name):
+            await unzip_msg.edit("This file is splitted\nUse the **/merge** command")
+        else:
+            await unzip_msg.edit(
+                text=Messages.CHOOSE_EXT_MODE.format("file", "🗂️"),
+                reply_markup=Buttons.CHOOSE_E_F__BTNS,
+            )
     else:
         await unzip_msg.edit("Send a valid archive/URL 🙄")
 
@@ -100,18 +112,22 @@ async def cancel_task_by_user(_, message):
         await unzipperbot.delete_messages(chat_id=message.from_user.id, message_ids=idtodel)
     except:
         pass
-    await unzipperbot.stop_transmission()
     await message.reply("Your task have successfully been canceled ❌")
 
 # For splitted archives
 @Client.on_message(filters.private & filters.command("merge"))
 async def merging(_, message: Message):
     merge_msg = await message.reply(
-        "Send me **all** the splitted files (.001, .002, .00×, …)\n\nOnce you sent them all, click on the `Merge 🛠️` button",
-        reply_markup=Buttons.MERGE_THEM_ALL,
+        "You have splitted archives to process ?\nSend me **all** the splitted files (.001, .002, .00×, …)\n\n**AFTER** you sent them all, send **/done** and click on the `Merge 🛠️` button"
     )
-    startid = merge_msg.id + 1
-    # Catch the files id + download + send to callbacks + cat + prompt dialog
+    await add_merge_task(message.from_user.id, merge_msg.id)
+
+@Client.on_message(filters.private & filters.command("done"))
+async def done_merge(_, message: Message):
+    done_msg = await message.reply(
+        "If you have sent **ALL** the files, you can click on the `Merge 🛠️` button below\n\nIf you sent /done by mistake and haven't sent all the files yet, just ignore this message and re-send **/done** when ALL the files are sent",
+        reply_markup=Buttons.MERGE_THEM_ALL
+    )
 
 # Database Commands
 @Client.on_message(filters.private & filters.command("mode"))
@@ -354,7 +370,6 @@ async def get_all_thumbs(_, message: Message):
     paths = await get_files(path=Config.THUMB_LOCATION)
     if not paths:
         await message.reply("No thumbnails on the server yet")
-    LOGGER.info(paths)
     for doc_f in paths:
         try:
             await unzipperbot.send_document(
@@ -367,7 +382,7 @@ async def get_all_thumbs(_, message: Message):
         except FloodWait as f:
             await sleep(f.value)
         except RPCError as e:
-            message.reply_text(e, quote=True)
+            await message.reply_text(e, quote=True)
 
 @Client.on_message(
     filters.private & filters.command("redbutton") & filters.user(Config.BOT_OWNER)
@@ -393,6 +408,7 @@ async def del_everything(_, message: Message):
     try:
         shutil.rmtree(Config.DOWNLOAD_LOCATION)
         await cleaner.edit("The whole server have been cleaned 😌")
+        os.mkdir(Config.DOWNLOAD_LOCATION)
     except:
         await cleaner.edit("An error happened 😕 probably because command is unstable")
 
@@ -408,7 +424,7 @@ async def send_logs(user_id):
         except FloodWait as f:
             await sleep(f.value)
         except RPCError as e:
-            unzipperbot.send_message(chat_id=user_id, text=e)
+            await unzipperbot.send_message(chat_id=user_id, text=e)
 
 def clear_logs():
     open('file.txt', 'w').close()
@@ -423,9 +439,12 @@ async def logz(_, message: Message):
     filters.private & filters.command("restart") & filters.user(Config.BOT_OWNER)
 )
 async def restart(_, message: Message):
-    folder_to_del = os.path.dirname(os.path.abspath(Config.DOWNLOAD_LOCATION))
-    shutil.rmtree(Config.DOWNLOAD_LOCATION)
-    LOGGER.info(f"Deleted {folder_to_del} folder successfully")
+    try:
+        folder_to_del = os.path.dirname(os.path.abspath(Config.DOWNLOAD_LOCATION))
+        shutil.rmtree(Config.DOWNLOAD_LOCATION)
+        LOGGER.info(f"Deleted {folder_to_del} folder successfully")
+    except:
+        pass
     restarttime = time.strftime("%Y/%m/%d - %H:%M:%S")
     await message.reply_text(
         f"**ℹ️ Bot restarted successfully at **`{restarttime}`", quote=True
@@ -474,6 +493,8 @@ Here is the list of the commands you can use (only in private btw) :
 **/clean** : Remove your files from my server. Also useful if a task failed
 **/mode** : Change your upload mode (either `doc` or `media`)
 **/stats** : Know all the current stats about me. If you're running on Heroku, it's reset every day
+**/merge** : Merge splitted archives together
+**/done** : After you sent all the splitted archives, use this to merge them
 **/info** : Get full info about a [Message](https://docs.pyrogram.org/api/types/Message) (info returned by Pyrogram)
 **/addthumb** : Upload with a custom thumbnail (not permanant yet)
 **/delthumb** : Removes your thumbnail
